@@ -1,0 +1,334 @@
+--// 📌 Rayfield UI Base — ESP Tab Added
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- things
+local CoreGui = game:GetService("CoreGui")
+
+
+-- Variables
+
+-- Generators
+local generatorCooldown = 2.5
+
+local Window = Rayfield:CreateWindow({
+    Name = "scripted.skibidi",
+    LoadingTitle = "Waiting for UI",
+    LoadingSubtitle = "les goo",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "skibidihub",
+        FileName = "RayfieldConfig"
+    },
+    Discord = { Enabled = false },
+    KeySystem = false
+})
+
+--// Tabs
+local tabGenerators = Window:CreateTab("Generators")
+local tabESP        = Window:CreateTab("ESP")
+
+-- Helpers
+local function getRootPart(model)
+    if model:FindFirstChild("HumanoidRootPart") then
+        return model.HumanoidRootPart
+    elseif model:FindFirstChild("Torso") then
+        return model.Torso
+    elseif model:FindFirstChild("UpperTorso") then
+        return model.UpperTorso
+    else
+        return model:FindFirstChildWhichIsA("BasePart")  -- fallback
+    end
+end
+
+local function applyHighlight(obj, color)
+    if obj:IsA("Model") or obj:IsA("BasePart") then
+        local target = obj:IsA("Model") and obj:FindFirstChildWhichIsA("BasePart") or obj
+        if target and not target:FindFirstChild("ESP_Highlight") then
+            local h = Instance.new("Highlight")
+            h.Name = "ESP_Highlight"
+            h.FillColor = color
+            h.OutlineColor = Color3.new(0, 0, 0)
+            h.FillTransparency = 0.5
+            h.OutlineTransparency = 0
+            h.Adornee = obj
+            h.Parent = target
+        end
+    end
+end
+
+-- Put this near the top with the other toggles/helpers
+
+local function applyESPWithText(obj, color, labelText)
+    local target = obj:IsA("Model") and getRootPart(obj) or obj
+    if not target then return end
+
+    -- Highlight
+    if not target:FindFirstChild("ESP_Highlight") then
+        local h = Instance.new("Highlight")
+        h.Name = "ESP_Highlight"
+        h.FillColor = color
+        h.OutlineColor = Color3.new(0, 0, 0)
+        h.FillTransparency = 0.5
+        h.OutlineTransparency = 0
+        h.Adornee = obj
+        h.Parent = target
+    end
+
+    -- Billboard Text
+    if not target:FindFirstChild("ESP_Billboard") then
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESP_Billboard"
+        billboard.Adornee = target -- attach to root part
+        billboard.Size = UDim2.new(0, 100, 0, 30)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1,0,1,0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.TextColor3 = color
+        textLabel.TextStrokeTransparency = 0
+        textLabel.TextScaled = true
+        textLabel.Text = labelText or obj.Name
+        textLabel.Parent = billboard
+
+        billboard.Parent = target
+    end
+end
+
+local espConnections = { Items = {}, Generators = {} }
+
+-- Removes highlights from a single object
+local function removeHighlight(obj)
+    if not obj then return end
+    for _, v in ipairs(obj:GetDescendants()) do
+        if v:IsA("Highlight") and v.Name == "ESP_Highlight" then
+            v:Destroy()
+        end
+    end
+end
+
+-- Removes all highlights from a parent
+local function removeHighlights(parent)
+    for _, v in ipairs(parent:GetDescendants()) do
+        if (v:IsA("Highlight") and v.Name == "ESP_Highlight") or
+           (v:IsA("BillboardGui") and v.Name == "ESP_Billboard") then
+            v:Destroy()
+        end
+    end
+end
+
+-- Stops watching for ESP updates
+local function stopWatching(key)
+    if espConnections[key] then
+        for _, conn in ipairs(espConnections[key]) do
+            conn:Disconnect()
+        end
+        espConnections[key] = {}
+    end
+end
+
+-- Function you already have
+local function GeneratorOnce()
+    local IngameMapFolder = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Ingame")
+    local SubMapFolder = IngameMapFolder and IngameMapFolder:FindFirstChild("Map")
+    if SubMapFolder then
+        for _, g in ipairs(SubMapFolder:GetChildren()) do
+            if g.Name == "Generator" and g.Progress.Value < 100 then
+                g.Remotes.RE:FireServer()
+            end
+        end
+    end
+end
+
+
+
+-- Auto Activate Generators Toggle
+tabGenerators:CreateToggle({
+    Name = "Auto Generator",
+    CurrentValue = false,
+    Flag = "AutoGen",
+    Callback = function(enabled)
+        -- Stop any previous loop
+        if espConnections["AutoGenLoop"] then
+            espConnections["AutoGenLoop"]:Disconnect()
+            espConnections["AutoGenLoop"] = nil
+        end
+
+        if enabled then
+            espConnections["_AutoGenTimer"] = 0
+            espConnections["AutoGenLoop"] = game:GetService("RunService").Heartbeat:Connect(function(delta)
+                espConnections["_AutoGenTimer"] = espConnections["_AutoGenTimer"] + delta
+                if espConnections["_AutoGenTimer"] >= generatorCooldown then
+                    espConnections["_AutoGenTimer"] = 0
+                    GeneratorOnce()
+                end
+            end)
+        else
+            espConnections["_AutoGenTimer"] = 0
+        end
+    end
+})
+
+-- Slider to adjust cooldown
+tabGenerators:CreateSlider({
+    Name = "Auto Generator delay",
+    Range = {2.5, 10},  -- min 2.5s, max 10s
+    Increment = 0.1,
+    Suffix = "s",
+    CurrentValue = generatorCooldown,
+    Flag = "GeneratorCooldown",
+    Callback = function(value)
+        generatorCooldown = value
+    end
+})
+
+-- Add button to Generators tab
+tabGenerators:CreateButton({
+    Name = "Do Generator",
+    Callback = function()
+        GeneratorOnce()
+    end
+})
+
+
+--// ====== ESP Toggles ======
+tabESP:CreateToggle({
+    Name = "Killers",
+    CurrentValue = false,
+    Flag = "ESP_Killers",
+    Callback = function(enabled)
+        local folder = game.Workspace:FindFirstChild("Players") and game.Workspace.Players:FindFirstChild("Killers")
+        if not folder then return end
+        if enabled then
+            for _, obj in ipairs(folder:GetChildren()) do
+                applyESPWithText(obj, Color3.fromRGB(255, 0, 0), "Killer")
+            end
+            folder.ChildAdded:Connect(function(child)
+                applyESPWithText(child, Color3.fromRGB(255, 0, 0), "Killer")
+            end)
+        else
+            removeHighlights(folder)
+        end
+    end
+})
+
+tabESP:CreateToggle({
+    Name = "Survivors",
+    CurrentValue = false,
+    Flag = "ESP_Survivors",
+    Callback = function(enabled)
+        local folder = game.Workspace:FindFirstChild("Players") and game.Workspace.Players:FindFirstChild("Survivors")
+        if not folder then return end
+        if enabled then
+            for _, obj in ipairs(folder:GetChildren()) do
+                applyESPWithText(obj, Color3.fromRGB(0, 0, 255), "Survivor")
+            end
+            folder.ChildAdded:Connect(function(child)
+                applyESPWithText(child, Color3.fromRGB(0, 0, 255), "Survivor")
+            end)
+        else
+            removeHighlights(folder)
+        end
+    end
+})
+
+tabESP:CreateToggle({
+    Name = "Items",
+    CurrentValue = false,
+    Flag = "ESP_Items",
+    Callback = function(enabled)
+        stopWatching("Items")
+
+        local function startItemsESP(path)
+            for _, obj in ipairs(path:GetChildren()) do
+                if obj.Name == "BloxyCola" or obj.Name == "Medkit" then
+                    applyESPWithText(obj, Color3.fromRGB(0, 255, 0), "Item")
+                end
+            end
+
+            table.insert(espConnections["Items"], path.ChildAdded:Connect(function(child)
+                if child.Name == "BloxyCola" or child.Name == "Medkit" then
+                    applyESPWithText(child, Color3.fromRGB(0, 255, 0), "Item")
+                end
+            end))
+
+            table.insert(espConnections["Items"], path.ChildRemoved:Connect(function(child)
+                removeHighlight(child)
+            end))
+        end
+
+        if enabled then
+            table.insert(espConnections["Items"], game:GetService("RunService").Heartbeat:Connect(function()
+                local path = workspace:FindFirstChild("Map")
+                    and workspace.Map:FindFirstChild("Ingame")
+                    and workspace.Map.Ingame:FindFirstChild("Map")
+
+                if path and not espConnections["Items"]._activePath then
+                    espConnections["Items"]._activePath = path
+                    startItemsESP(path)
+                elseif not path and espConnections["Items"]._activePath then
+                    espConnections["Items"]._activePath = nil
+                end
+            end))
+        else
+            local path = workspace:FindFirstChild("Map")
+                and workspace.Map:FindFirstChild("Ingame")
+                and workspace.Map.Ingame:FindFirstChild("Map")
+            if path then removeHighlights(path) end
+        end
+    end
+})
+
+tabESP:CreateToggle({
+    Name = "Generators",
+    CurrentValue = false,
+    Flag = "ESP_Generators",
+    Callback = function(enabled)
+        stopWatching("Generators")
+        local function startGeneratorsESP(path)
+            local function highlightGenerators()
+                for _, obj in ipairs(path:GetChildren()) do
+                    if obj.Name == "Generator" then
+                        applyESPWithText(obj, Color3.fromRGB(255,255,0), "Generator")
+                    end
+                end
+            end
+            highlightGenerators()
+            table.insert(espConnections["Generators"], path.ChildAdded:Connect(function(child)
+                if child.Name == "Generator" then
+                    applyESPWithText(child, Color3.fromRGB(255, 255, 0), "Generator")
+                end
+            end))
+            table.insert(espConnections["Generators"], path.ChildRemoved:Connect(function(child)
+                removeHighlight(child)
+            end))
+        end
+        if enabled then
+            table.insert(espConnections["Generators"], game.Workspace.DescendantAdded:Connect(function(desc)
+                if desc.Name == "Map" and desc.Parent and desc.Parent.Name == "Ingame" then
+                    local mapPath = game.Workspace:FindFirstChild("Map")
+                    if mapPath and mapPath:FindFirstChild("Ingame") and mapPath.Ingame:FindFirstChild("Map") then
+                        startGeneratorsESP(mapPath.Ingame.Map)
+                    end
+                end
+            end))
+            local path = game.Workspace:FindFirstChild("Map")
+                        and game.Workspace.Map:FindFirstChild("Ingame")
+                        and game.Workspace.Map.Ingame:FindFirstChild("Map")
+            if path then
+                startGeneratorsESP(path)
+            end
+        else
+            local path = game.Workspace:FindFirstChild("Map")
+                        and game.Workspace.Map:FindFirstChild("Ingame")
+                        and game.Workspace.Map.Ingame:FindFirstChild("Map")
+            if path then
+                removeHighlights(path)
+            end
+        end
+    end
+})
+
+--// Load config
+Rayfield:LoadConfiguration()
