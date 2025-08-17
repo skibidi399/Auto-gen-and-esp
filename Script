@@ -88,7 +88,8 @@ local function applyESPWithText(obj, color, labelText)
         textLabel.BackgroundTransparency = 1
         textLabel.TextColor3 = color
         textLabel.TextStrokeTransparency = 0
-        textLabel.TextScaled = true
+        textLabel.TextScaled = false -- turn off auto-scale
+        textLabel.TextSize = 10 -- pick a font size
         textLabel.Text = labelText or obj.Name
         textLabel.Parent = billboard
 
